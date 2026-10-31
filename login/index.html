@@ -1,0 +1,185 @@
+<!doctype html>
+<html lang="sv">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="referrer" content="no-referrer">
+  <meta http-equiv="Cache-Control" content="no-store, no-cache, must-revalidate">
+  <meta http-equiv="Pragma" content="no-cache">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline' https://esm.sh; style-src 'unsafe-inline'; connect-src https://zwpzvmigwthiqptyozgs.supabase.co; img-src 'none'; font-src 'none'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'">
+  <title>SVEA RIKE 1930 – säker anslutning</title>
+  <style>
+    :root { color-scheme:dark; font-family:Inter,ui-sans-serif,system-ui,sans-serif; background:#07111f; color:#e8f0f8 }
+    * { box-sizing:border-box }
+    body { margin:0; min-height:100vh; display:grid; place-items:center; padding:24px; background:radial-gradient(circle at top,#12365a,#07111f 55%) }
+    main { width:min(92vw,520px); padding:32px; border:1px solid #315576; border-radius:18px; background:rgba(7,17,31,.96); box-shadow:0 24px 80px #0008 }
+    h1 { margin:0 0 8px; font-family:Georgia,serif; font-weight:600; letter-spacing:.02em }
+    p,li { color:#b8c9d9; line-height:1.55 }
+    label { display:block; margin:18px 0 6px; color:#dbe8f4 }
+    input { width:100%; padding:12px 14px; border:1px solid #416889; border-radius:10px; background:#0c1b2a; color:#fff }
+    button { margin-top:18px; padding:11px 16px; border:0; border-radius:10px; background:#d8b45c; color:#18202a; font-weight:700; cursor:pointer }
+    button.secondary { margin-left:8px; background:#29445d; color:#eaf2f9 }
+    button:disabled { opacity:.55; cursor:wait }
+    .muted { font-size:.9rem; color:#8fa7ba }
+    .error { min-height:1.5em; color:#ff9e9e }
+    .success { color:#9be2b0 }
+    .hidden { display:none }
+  </style>
+</head>
+<body>
+  <main id="app"><h1>SVEA RIKE 1930</h1><p>Kontrollerar den säkra anslutningen…</p></main>
+  <script type="module">
+    import { createClient } from "https://esm.sh/@supabase/supabase-js@2.95.0";
+
+    const SUPABASE_URL = "https://zwpzvmigwthiqptyozgs.supabase.co";
+    const PUBLISHABLE_KEY = "sb_publishable_l7GRg9vAz-TqvMJH1r_CWw_Bqx8gfp-";
+    const PUBLIC_BASE = "https://ahlos.github.io/svea-rike-auth";
+    const app = document.getElementById("app");
+
+    if (window.self !== window.top) {
+      app.innerHTML = "<h1>Anslutningen blockerades</h1><p>Öppna sidan i ett eget webbläsarfönster.</p>";
+      throw new Error("Framed OAuth page blocked");
+    }
+
+    const supabase = createClient(SUPABASE_URL, PUBLISHABLE_KEY, {
+      auth: { persistSession: true, detectSessionInUrl: true, flowType: "pkce" },
+    });
+
+    function safeRedirect(value) {
+      if (!value) return "/oauth/consent/";
+      try {
+        const parsed = new URL(value, "https://local.invalid");
+        if (parsed.origin !== "https://local.invalid" || parsed.pathname !== "/oauth/consent/") return "/oauth/consent/";
+        return `${parsed.pathname}${parsed.search}`;
+      } catch {
+        return "/oauth/consent/";
+      }
+    }
+
+    function setBusy(busy) {
+      for (const button of app.querySelectorAll("button")) button.disabled = busy;
+    }
+
+    async function showLogin() {
+      const redirectPath = safeRedirect(new URLSearchParams(location.search).get("redirect"));
+      app.innerHTML = `
+        <h1>SVEA RIKE 1930</h1>
+        <p>Logga in med Supabase-kontot som äger spelet. Uppgifterna skickas direkt från webbläsaren till Supabase Auth och lagras inte av denna sida.</p>
+        <form id="login-form">
+          <label for="email">E-post</label>
+          <input id="email" name="email" type="email" autocomplete="username" required>
+          <label for="password">Lösenord</label>
+          <input id="password" name="password" type="password" autocomplete="current-password">
+          <button type="submit">Logga in</button>
+          <button type="button" class="secondary" id="magic">Skicka magisk länk</button>
+        </form>
+        <p id="message" class="error" role="status"></p>
+        <p class="muted">Efter ditt uttryckliga godkännande får ChatGPT en tidsbegränsad användartoken. Spelets RLS och ägarkontroll gäller fortfarande.</p>`;
+
+      const session = await supabase.auth.getSession();
+      if (session.data.session) {
+        location.replace(PUBLIC_BASE + redirectPath);
+        return;
+      }
+
+      const form = document.getElementById("login-form");
+      const message = document.getElementById("message");
+      const email = document.getElementById("email");
+      const password = document.getElementById("password");
+
+      form.addEventListener("submit", async (event) => {
+        event.preventDefault();
+        setBusy(true);
+        message.textContent = "Loggar in…";
+        const result = await supabase.auth.signInWithPassword({ email: email.value, password: password.value });
+        if (result.error) {
+          setBusy(false);
+          message.textContent = result.error.message;
+          return;
+        }
+        location.replace(PUBLIC_BASE + redirectPath);
+      });
+
+      document.getElementById("magic").addEventListener("click", async () => {
+        if (!email.reportValidity()) return;
+        setBusy(true);
+        message.textContent = "Skickar länk…";
+        const result = await supabase.auth.signInWithOtp({
+          email: email.value,
+          options: { emailRedirectTo: PUBLIC_BASE + redirectPath },
+        });
+        setBusy(false);
+        message.className = result.error ? "error" : "success";
+        message.textContent = result.error ? result.error.message : "Kontrollera din e-post och öppna länken i samma webbläsare.";
+      });
+    }
+
+    async function showConsent() {
+      const authorizationId = new URLSearchParams(location.search).get("authorization_id")?.trim();
+      if (!authorizationId) {
+        app.innerHTML = "<h1>Ogiltig anslutning</h1><p class='error'>authorization_id saknas.</p>";
+        return;
+      }
+
+      app.innerHTML = `
+        <h1>Godkänn spelanslutning</h1>
+        <p id="loading">Kontrollerar din inloggning och anslutningens behörigheter…</p>
+        <section id="details" class="hidden">
+          <p><strong id="client-name"></strong> vill ansluta till ditt SVEA RIKE-konto.</p>
+          <p class="muted">Begärda OAuth-omfattningar:</p>
+          <ul id="scopes"></ul>
+          <button id="approve">Godkänn</button>
+          <button id="deny" class="secondary">Neka</button>
+        </section>
+        <p id="message" class="error" role="status"></p>`;
+
+      const user = await supabase.auth.getUser();
+      if (!user.data.user) {
+        const returnPath = `/oauth/consent/?authorization_id=${encodeURIComponent(authorizationId)}`;
+        location.replace(`${PUBLIC_BASE}/login/?redirect=${encodeURIComponent(returnPath)}`);
+        return;
+      }
+
+      const message = document.getElementById("message");
+      const result = await supabase.auth.oauth.getAuthorizationDetails(authorizationId);
+      if (result.error || !result.data) {
+        message.textContent = result.error?.message || "Ogiltig OAuth-begäran.";
+        return;
+      }
+      if (!("authorization_id" in result.data)) {
+        location.assign(result.data.redirect_url);
+        return;
+      }
+
+      document.getElementById("loading").className = "hidden";
+      document.getElementById("details").className = "";
+      document.getElementById("client-name").textContent = result.data.client?.name || "ChatGPT";
+      for (const scope of String(result.data.scope || "email").split(/\s+/).filter(Boolean)) {
+        const item = document.createElement("li");
+        item.textContent = scope;
+        document.getElementById("scopes").appendChild(item);
+      }
+
+      async function decide(approved) {
+        setBusy(true);
+        const decision = approved
+          ? await supabase.auth.oauth.approveAuthorization(authorizationId)
+          : await supabase.auth.oauth.denyAuthorization(authorizationId);
+        if (decision.error) {
+          setBusy(false);
+          message.textContent = decision.error.message;
+          return;
+        }
+        location.assign(decision.data.redirect_url);
+      }
+      document.getElementById("approve").addEventListener("click", () => decide(true));
+      document.getElementById("deny").addEventListener("click", () => decide(false));
+    }
+
+    const path = location.pathname.replace(/\/+$/, "");
+    if (path.endsWith("/login")) await showLogin();
+    else if (path.endsWith("/oauth/consent")) await showConsent();
+    else app.innerHTML = "<h1>SVEA RIKE 1930</h1><p class='success'>OAuth-värd aktiv.</p><p class='muted'>Inga speldata visas på denna sida.</p>";
+  </script>
+</body>
+</html>
