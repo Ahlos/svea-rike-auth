@@ -61,7 +61,16 @@
     }
 
     async function showLogin() {
-      const redirectPath = safeRedirect(new URLSearchParams(location.search).get("redirect"));
+      const searchParams = new URLSearchParams(location.search);
+      const redirectPath = safeRedirect(searchParams.get("redirect"));
+
+      if (searchParams.get("switch_account") === "1") {
+        await supabase.auth.signOut({ scope: "local" });
+        searchParams.delete("switch_account");
+        location.replace(`${location.pathname}?${searchParams.toString()}`);
+        return;
+      }
+
       app.innerHTML = `
         <h1>SVEA RIKE 1930</h1>
         <p>Logga in med Supabase-kontot som äger spelet. Uppgifterna skickas direkt från webbläsaren till Supabase Auth och lagras inte av denna sida.</p>
